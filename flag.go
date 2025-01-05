@@ -16,15 +16,19 @@ import (
 **/
 
 type Flag struct {
-	Name      string
-	Shorthand string
-	Usage     string
-	Default   string
-	EnvVars   []string
-	Value     value.Value
-	Changed   bool
-	Validate  func(flag *Flag) (Validator, error)
-	Hidden    bool
+	Name                string
+	Shorthand           string
+	Usage               string
+	Default             string
+	Deprecated          string
+	NoOptDefVal         string
+	ShorthandDeprecated string
+	EnvVars             []string
+	Value               value.Value
+	Changed             bool
+	Validate            func(flag *Flag) (Validator, error)
+	Hidden              bool
+	Annotations         map[string]string
 }
 
 func (f *Flag) defaultIsZeroValue() bool {
@@ -52,25 +56,30 @@ const (
 
 type NormalizedName string
 
+type ParseErrorsWhitelist struct {
+	UnknownFlags bool
+}
+
 type FlagSet struct {
-	Usage              func()
-	SortFlags          bool
-	name               string // 命令的名称
-	args               []string
-	actual             map[NormalizedName]*Flag
-	argsLenAtDash      int
-	addStdFlagSets     []stdflag.FlagSet
-	errorHandling      ErrorHanding
-	formal             map[NormalizedName]*Flag
-	interspersed       bool
-	normalizedNameFunc func(f *FlagSet, name string) NormalizedName
-	output             io.Writer
-	orderedFormal      []*Flag // 按标志的添加顺序保存
-	orderedActual      []*Flag
-	parsed             bool
-	sortedFormal       []*Flag
-	sortedActual       []*Flag
-	shorthands         map[byte]*Flag
+	Usage                func()
+	SortFlags            bool
+	ParseErrorsWhitelist ParseErrorsWhitelist
+	name                 string // 命令的名称
+	args                 []string
+	actual               map[NormalizedName]*Flag
+	argsLenAtDash        int
+	addStdFlagSets       []stdflag.FlagSet
+	errorHandling        ErrorHanding
+	formal               map[NormalizedName]*Flag
+	interspersed         bool
+	normalizedNameFunc   func(f *FlagSet, name string) NormalizedName
+	output               io.Writer
+	orderedFormal        []*Flag // 按标志的添加顺序保存
+	orderedActual        []*Flag
+	parsed               bool
+	sortedFormal         []*Flag
+	sortedActual         []*Flag
+	shorthands           map[byte]*Flag
 }
 
 func sortFlags(flags map[NormalizedName]*Flag) []*Flag {
@@ -229,6 +238,52 @@ func (f *FlagSet) Changed(name string) bool {
 		return false
 	}
 	return flag.Changed
+}
+
+type parseFunc func(flag *Flag, value string) error
+
+func (f *FlagSet) parseLongArg(s string, args []string, fn parseFunc) ([]string, error) {
+	return nil, nil
+}
+
+func (f *FlagSet) parseShortArg(s string, args []string, fn parseFunc) ([]string, error) {
+	shorthands := s[1:]
+
+	for len(shorthands) > 0 {
+		// todo
+	}
+	return nil, nil
+}
+
+func (f *FlagSet) parseArgs(args []string, fn parseFunc) (err error) {
+	for len(args) > 0 {
+		s := args[0]
+		args = args[1:]
+		if len(s) == 0 || s[0] != '-' || len(s) == 1 {
+			if !f.interspersed {
+				f.args = append(f.args, s)
+				f.args = append(f.args, args...)
+				return
+			}
+			f.args = append(f.args, s)
+			continue
+		}
+
+		if s[1] == '-' {
+			if len(s) == 2 {
+				f.argsLenAtDash = len(f.args)
+				f.args = append(f.args, args...)
+				break
+			}
+			args, err = f.parseLongArg(s, args, fn)
+		} else {
+			args, err = f.parseShortArg(s, args, fn)
+		}
+		if err != nil {
+			return
+		}
+	}
+	return
 }
 
 func (f *FlagSet) AddFlag(flag *Flag) {
